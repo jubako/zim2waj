@@ -2,7 +2,10 @@ use clap::Parser;
 
 use dropout::Dropper;
 use indicatif_log_bridge::LogWrapper;
-use jbk::creator::{BasicCreator, CompHint, ConcatMode, InputReader};
+use jbk::creator::{
+    AtomicOutFile, BasicCreator, CompHint, ConcatMode, ContentPackCreator, InputReader,
+    PackRecipient,
+};
 use mime_guess::{mime, Mime};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
@@ -37,6 +40,10 @@ struct Cli {
     // Archive name to create
     #[clap(short, long, value_parser)]
     outfile: PathBuf,
+
+    // Split binary content from text
+    #[clap(long)]
+    split: bool,
 }
 
 #[derive(Clone)]
@@ -148,8 +155,51 @@ impl jbk::creator::Progress for ProgressBar {
     }
 }
 
+pub struct ContentAdderSwitch {
+    content_pack: BasicCreator,
+    binary_content_pack: Option<ContentPackCreator<dyn PackRecipient + 'static>>,
+}
+
+impl ContentAdderSwitch {
+    fn new(
+        content_pack: BasicCreator,
+        binary_content_pack: Option<ContentPackCreator<dyn PackRecipient + 'static>>,
+    ) -> Self {
+        Self {
+            content_pack,
+            binary_content_pack,
+        }
+    }
+
+    fn add_content(
+        &mut self,
+        reader: Box<dyn InputReader>,
+        is_binary: bool,
+        comp_hint: CompHint,
+    ) -> jbk::Result<jbk::ContentAddress> {
+        if let Some(binary_content_pack) = &mut self.binary_content_pack {
+            if is_binary {
+                return binary_content_pack.add_content(reader, comp_hint);
+            }
+        }
+        self.content_pack.add_content(reader, comp_hint)
+    }
+
+    fn into_inner(
+        self,
+    ) -> (
+        BasicCreator,
+        Vec<ContentPackCreator<dyn PackRecipient + 'static>>,
+    ) {
+        (
+            self.content_pack,
+            self.binary_content_pack.into_iter().collect(),
+        )
+    }
+}
+
 pub struct Converter {
-    basic_creator: BasicCreator,
+    content_adder_switch: ContentAdderSwitch,
     entry_store_creator: Box<waj::create::EntryStoreCreator>,
     progress: Arc<ProgressBar>,
     has_main_page: bool,
@@ -171,7 +221,7 @@ impl ZimEntry {
     pub fn new(
         entry: zim_rs::entry::Entry,
         dropper: &Dropper<Droppable>,
-        adder: &mut BasicCreator,
+        adder: &mut ContentAdderSwitch,
     ) -> jbk::Result<Self> {
         let path = entry.get_path();
         let is_main = path.is_empty();
@@ -186,6 +236,11 @@ impl ZimEntry {
             let item = entry.get_item(false).unwrap();
             dropper.dropout(entry.into());
             let item_mimetype = item.get_mimetype().unwrap();
+            let is_binary = !(item_mimetype.contains("text/")
+                || item_mimetype.contains("javascript")
+                || item_mimetype.contains("json")
+                || item_mimetype.contains("image/svg")
+                || item_mimetype.contains("xml"));
             let item_size = item.get_size();
             let direct_access = item.get_direct_access().unwrap();
             let comp_hint = if direct_access.is_some() {
@@ -204,7 +259,7 @@ impl ZimEntry {
                         Some(item_size),
                     )?)
                 };
-            let content_address = adder.add_content(reader, comp_hint)?;
+            let content_address = adder.add_content(reader, is_binary, comp_hint)?;
             dropper.dropout(item.into());
             Self {
                 path: path.into(),
@@ -342,6 +397,7 @@ impl Converter {
         zim: &Archive,
         outfile: P,
         concat_mode: ConcatMode,
+        split_binary: bool,
     ) -> jbk::Result<Self> {
         let progress = Arc::new(ProgressBar::new(zim)?);
         let basic_creator = BasicCreator::new(
@@ -351,12 +407,33 @@ impl Converter {
             jbk::creator::Compression::zstd(),
             Arc::clone(&progress) as Arc<dyn jbk::creator::Progress>,
         )?;
+
+        let binary_content_pack = if split_binary {
+            let mut binary_content_path = outfile.as_ref().to_path_buf();
+            binary_content_path.set_extension("binary.waj");
+            let binary_content_file: Box<dyn PackRecipient> =
+                AtomicOutFile::new(binary_content_path)?;
+            let binary_content_pack = ContentPackCreator::new_from_output_with_progress(
+                binary_content_file,
+                jbk::PackId::from(2),
+                waj::VENDOR_ID,
+                Default::default(),
+                jbk::creator::Compression::zstd(),
+                Arc::clone(&progress) as Arc<dyn jbk::creator::Progress>,
+            )?;
+            Some(binary_content_pack)
+        } else {
+            None
+        };
+
+        let content_adder_switch = ContentAdderSwitch::new(basic_creator, binary_content_pack);
+
         let entry_store_creator = Box::new(waj::create::EntryStoreCreator::new(Some(
             zim.get_all_entrycount() as usize,
         )));
 
         Ok(Self {
-            basic_creator,
+            content_adder_switch,
             entry_store_creator,
             progress,
             has_main_page: false,
@@ -365,8 +442,8 @@ impl Converter {
     }
 
     fn finalize(self, outfile: &Path) -> jbk::Result<()> {
-        self.basic_creator
-            .finalize(outfile, self.entry_store_creator, vec![])
+        let (basic_creator, extra_content_creators) = self.content_adder_switch.into_inner();
+        basic_creator.finalize(outfile, self.entry_store_creator, extra_content_creators)
     }
 
     pub fn run(mut self, zim: Arc<Archive>, outfile: PathBuf) -> jbk::Result<()> {
@@ -395,7 +472,7 @@ impl Converter {
     fn handle(&mut self, entry: zim_rs::entry::Entry) -> jbk::Result<()> {
         self.progress.entries.inc(1);
 
-        let entry = ZimEntry::new(entry, &self.dropper, &mut self.basic_creator)?;
+        let entry = ZimEntry::new(entry, &self.dropper, &mut self.content_adder_switch)?;
         if entry.is_main {
             self.has_main_page = true;
         }
@@ -407,6 +484,6 @@ fn main() -> jbk::Result<()> {
     let args = Cli::parse();
 
     let zim = Arc::new(Archive::new(args.zim_file.to_str().unwrap()).unwrap());
-    let converter = Converter::new(&zim, &args.outfile, ConcatMode::OneFile)?;
+    let converter = Converter::new(&zim, &args.outfile, ConcatMode::OneFile, args.split)?;
     converter.run(zim, args.outfile)
 }
