@@ -9,7 +9,7 @@ edition = "2021"
 clap = { version = "4.4.5", features = ["derive"] }
 indicatif = "0.17.3"
 jbk = { git = "https://github.com/jubako/jubako.git", package="jubako", version="0.3.0-dev" }
-zim-rs = { path = "../zim-rs" }
+zim-rs = "0.1.1"
 waj = { git = "https://github.com/jubako/waj.git", package="libwaj", version="0.2.0" }
 tempfile = "3.7.0"
 mime_guess = "2.0.4"
