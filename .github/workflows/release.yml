@@ -17,14 +17,14 @@ jobs:
 
     - name: Download libzim
       run: |
-      VERSION="9.2.1"
-      ARCHIVE_NAME="libzim_linux-x86_64-${VERSION}"
-      wget "https://download.openzim.org/release/libzim/${ARCHIVE_NAME}.tar.gz"
-      tar xf ${ARCHIVE_NAME}.tar.gz
-      ARCHIVE_PATH=$(pwd)/${ARCHIVE_NAME}
-      LIBZIM_LIB=${ARCHIVE_PATH}/lib/x86_64-linux-gnu
-      echo "LIBZIM_LIB=$LIBZIM_LIB" >> $GITHUB_ENV
-      echo "LIBZIM_INCLUDE=${ARCHIVE_PATH}/include" >> $GITHUB_ENV
+        VERSION="9.2.1"
+        ARCHIVE_NAME="libzim_linux-x86_64-${VERSION}"
+        wget "https://download.openzim.org/release/libzim/${ARCHIVE_NAME}.tar.gz"
+        tar xf ${ARCHIVE_NAME}.tar.gz
+        ARCHIVE_PATH=$(pwd)/${ARCHIVE_NAME}
+        LIBZIM_LIB=${ARCHIVE_PATH}/lib/x86_64-linux-gnu
+        echo "LIBZIM_LIB=$LIBZIM_LIB" >> $GITHUB_ENV
+        echo "LIBZIM_INCLUDE=${ARCHIVE_PATH}/include" >> $GITHUB_ENV
 
     - name: Publish
       env:
