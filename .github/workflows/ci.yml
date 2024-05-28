@@ -16,7 +16,7 @@ jobs:
         os:
           - ubuntu-latest
           - macos-latest
-          - windows-latest
+#          - windows-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -24,17 +24,47 @@ jobs:
       - name: Check format
         run: cargo fmt --all --check
 
+      - name: Download libzim
+        run: |
+          if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]
+          then
+              OS="linux"
+              ARCH="x86_64"
+              ARCH_POST="/x86_64-linux-gnu"
+              LIBZIM_NAME="libzim.so.9"
+          else
+              OS="macos"
+              ARCH="arm64"
+              ARCH_POST=""
+              LIBZIM_NAME="libzim.9.dylib"
+          fi
+          VERSION="9.2.1"
+          ARCHIVE_NAME="libzim_${OS}-${ARCH}-${VERSION}"
+          wget "https://download.openzim.org/release/libzim/${ARCHIVE_NAME}.tar.gz"
+          tar xf ${ARCHIVE_NAME}.tar.gz
+          ARCHIVE_PATH=$(pwd)/${ARCHIVE_NAME}
+          LIBZIM_LIB=${ARCHIVE_PATH}/lib${ARCH_POST}
+          echo "LIBZIM_NAME=$LIBZIM_NAME" >> $GITHUB_ENV
+          echo "LIBZIM_LIB=$LIBZIM_LIB" >> $GITHUB_ENV
+          echo "LIBZIM_INCLUDE=${ARCHIVE_PATH}/include" >> $GITHUB_ENV
+          echo "DYLD_LIBRARY_PATH=${LIBZIM_LIB}:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
+          
       - name: Build
         run: cargo build
 
       - name: Test code
         run: cargo test --verbose
 
+      - name: Prepare artefact dir
+        run: |
+          mkdir ARTEFACTS
+          cp target/debug/zim2waj ARTEFACTS
+          cp ${LIBZIM_LIB}/${LIBZIM_NAME} ARTEFACTS
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: binary-${{ matrix.os }}
+          name: zim2waj-${{ matrix.os }}
           path: |
-            target/debug/zim2waj
-            target/debug/zim2waj.exe
+            ARTEFACTS/*
           compression-level: 0

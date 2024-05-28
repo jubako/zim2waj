@@ -41,28 +41,45 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        build: [linux, macos, windows]
+        build: [linux, macos] #, windows
         include:
         - build: linux
           os: ubuntu-latest
         - build: macos
           os: macos-latest
-        - build: windows
-          os: windows-latest
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Download libzim
+      run: |
+      if [[ "${{ matrix.build }}" == "linux" ]]
+      then
+          ARCH="x86_64"
+          ARCH_POST="/x86_64-linux-gnu"
+          LIBZIM_NAME="libzim.so.9"
+      else
+          ARCH="arm64"
+          ARCH_POST=""
+          LIBZIM_NAME="libzim.9.dylib"
+      fi
+      VERSION="9.2.1"
+      ARCHIVE_NAME="libzim_${{ matrix.build }}-${ARCH}-${VERSION}"
+      wget "https://download.openzim.org/release/libzim/${ARCHIVE_NAME}.tar.gz"
+      tar xf ${ARCHIVE_NAME}.tar.gz
+      ARCHIVE_PATH=$(pwd)/${ARCHIVE_NAME}
+      LIBZIM_LIB=${ARCHIVE_PATH}/lib${ARCH_POST}
+      echo "LIBZIM_NAME=$LIBZIM_NAME" >> $GITHUB_ENV
+      echo "LIBZIM_LIB=$LIBZIM_LIB" >> $GITHUB_ENV
+      echo "LIBZIM_INCLUDE=${ARCHIVE_PATH}/include" >> $GITHUB_ENV
+      echo "DYLD_LIBRARY_PATH=${LIBZIM_LIB}:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
+
     - name: Build release binary
       shell: bash
       run: |
         cargo build --verbose --release
-        if [ "${{ matrix.os }}" = "windows-latest" ]; then
-          bin="target/release/zim2waj.exe"
-        else
-          bin="target/release/zim2waj"
-        fi
+        bin="target/release/zim2waj"
         echo "BIN=$bin" >> $GITHUB_ENV
 
     - name: Strip release binary (macos)
@@ -79,22 +96,14 @@ jobs:
     - name: Creating directory for archive
       shell: bash
       run: |
+        mkdir -p "$ARCHIVE"/{complete,doc}
         cp "$BIN" "$ARCHIVE"/
+        cp "${LIBZIM_LIB}/${LIBZIM_NAME}" "$ARCHIVE/"
         cp {README.md,LICENSE-MIT} "$ARCHIVE"/
         cp Changelog.md "$ARCHIVE"/doc/
 
-    - name: Build archive (Windows)
-      shell: bash
-      if: matrix.os == 'windows-latest'
-      run: |
-        7z a "$ARCHIVE.zip" "$ARCHIVE"
-        certutil -hashfile "$ARCHIVE.zip" SHA256 > "$ARCHIVE.zip.sha256"
-        echo "ASSET=$ARCHIVE.zip" >> $GITHUB_ENV
-        echo "ASSET_SUM=$ARCHIVE.zip.sha256" >> $GITHUB_ENV
-
     - name: Build archive (Unix)
       shell: bash
-      if: matrix.os != 'windows-latest'
       run: |
         tar czf "$ARCHIVE.tar.gz" "$ARCHIVE"
         shasum -a 256 "$ARCHIVE.tar.gz" > "$ARCHIVE.tar.gz.sha256"
@@ -104,7 +113,7 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: pre_release-${{ matrix.build }}
+        name: pre_release-zim2waj-${{ matrix.build }}
         path: |
           ${{ env.ASSET }}
         compression-level: 0
