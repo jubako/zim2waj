@@ -1,75 +1,86 @@
-Zim to Waj
-==========
+# Zim2Waj: Zim to Waj Converter
+
+**A command-line tool to convert Zim archives to the Waj (Web Archive Jubako) format.**
+
+Waj, a format based on Jubako, is designed for storing web content (static websites).
+Like ZIM files, Waj archives can contain HTML, CSS, and JavaScript resources. The key advantage of Waj (as Zim) is that its content can be served directly by a local webserver without prior extraction, enhancing speed and convenience. Unlike ZIM, Waj omits metadata, full-text indexes, and title indexes, focusing solely on web resources.
+
+However, Waj can store binary content in a separated pack, which allow to have text only archive than can be upgraded to
+full archive only by adding the binary content.
+
+## Installation
+
+zim2waj relies on the `zim-rs` and `zim-sys` crates, which in turn depend on the `libzim` library. You must have `libzim` installed before compiling `zim2waj`.
+
+**1. Install libzim:**
+
+* **Linux (using package managers):**
+
+  ```bash
+  sudo dnf install libzim-devel  # Fedora/CentOS/RHEL
+  ```
+
+  or
+
+  ```bash
+  sudo apt-get install libzim-dev  # Debian/Ubuntu
+  ```
+
+* **Linux (or other systems) using pre-built binaries:** Download pre-built binaries from [https://download.openzim.org/release/libzim/](https://download.openzim.org/release/libzim/).  You will need to set the `PKG_CONFIG_PATH` and `LD_LIBRARY_PATH` environment variables to point to the correct directories containing the libzim library and header files respectively. For example:
+
+  ```bash
+  export PKG_CONFIG_PATH=/path/to/libzim/lib/pkgconfig:$PKG_CONFIG_PATH
+  export LD_LIBRARY_PATH=/path/to/libzim/lib:$LD_LIBRARY_PATH
+  ```
+
+  Replace `/path/to/libzim` with the actual path to your extracted libzim directory.
 
 
-A tool to convert a Zim file into a Waj file.
+**2. Install zim2waj:**
 
-Waj (Web Archive Jubako) is a format based on Jubako to store web content (aka static website).
+Once `libzim` is installed, install `zim2waj` using Cargo:
 
-As ZIM files, a Waj can contains web resources (html, css, js).
-The content can be directly served as a local webserver without extracting the archive content first.
-
-Contrarly to ZIM, Waj contains only web resources.
-It doesn't contain a fulltext index nor a title index. So it is not possible to search content in it [TODO]
-
-`zim2waj` tool read a ZIM archive and create a Waj archive, excluding Metadata, fulltext index and title index.
-
-
-Installing zim2waj
-------------------
-
-
-To read zim content, zim2waj is based on [zim-rs](https://crates.io/crates/zim-rs) and [zim-sys](https://crates.io/crates/zim-sys)
-which in turn, use [libzim](https://github.com/openzim/libzim) library.
-
-You need to have libzim installed to be able to compile `zim2waj`
-
-On linux, you can install libzim from standard package manangement:
-```
-$ sudo dnf install libzim-devel
-```
-
-or 
-
-```
-$ apt-get install libzim-dev
-```
-
-
-You can also use prebuild binaries from https://download.openzim.org/release/libzim/.
-In this case, you will have to set `PKG_CONFIG_PATH` and `LD_LIBRARY_PATH` to point to correctly directories.
-
-
-Then you can install `zim2waj` with:
-
-```
-$ cargo install --git https://github.com/jubako/zim2waj
+```bash
+cargo install --git https://github.com/jubako/zim2waj
 ```
 
 
-Running zim2waj
----------------
+## Usage
 
-Simply run:
+**Basic Conversion:**
 
+```bash
+zim2waj <zim_file> --outfile <waj_file>
 ```
-$ zim2waj <zim_file> --outfile <waj_file>
-```
 
-For better performance, I advice you to increase the internal cluster cache of libzim to avoid some (a lot of) clusters uncompressions.
+For optimal performance, increase the internal cluster cache of `libzim` to reduce cluster decompression overhead:
 
-```
+```bash
 ZIM_CLUSTERCACHE=128 zim2waj <zim_file> --outfile <waj_file>
 ```
 
-Splitting content
------------------
+** Splitting Content:**
 
-Contrarly to Zim archive, Waj archive can store binary content (image, video) in a separated file (pack) than main content.
-To do so, pass the `--split` option to `zim2waj`.
+To separate binary content into a separate pack file, use the `--split` option:
 
-It will create an extra file `<waj_file>.binary.jbkc`. You can serve only `<waj_file>` without the binary content and you will
-have a working waj file (without image obviously).
+```bash
+zim2waj <zim_file> --outfile <waj_file> --split
+```
 
-If you move `<waj_file>` be sure to keep the binary pack in the same directory.
-Or use `jbk locate` (`$ cargo install jubako`) to update location of binary pack in `<waj_file>`.
+This creates an additional file `<waj_file>.binary.jbkc`.  The main `<waj_file>` will function correctly even without the binary pack, albeit without the binary assets.  If you move the main Waj file, ensure the binary pack remains in the same directory.
+ Alternatively, use `jbk locate` (from the `jubako` crate, installable via `cargo install jubako`) to update the binary pack location within the main Waj file.
+
+
+## Contributing
+
+Contributions are welcome! Please open an issue or submit a pull request.
+
+## Sponsoring
+
+I ([@mgautierfr](https://github.com/mgautierfr)) am a freelance developer. All jubako projects are created in my free time, which competes with my paid work.
+If you want me to be able to spend more time on Jubako projects, please consider [sponsoring me](https://github.com/sponsors/jubako).
+You can also donate on [liberapay](https://liberapay.com/jubako/donate) or [buy me a coffee](https://buymeacoffee.com/jubako).
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE-MIT](LICENSE-MIT) file for details.
