@@ -176,7 +176,7 @@ impl ContentAdderSwitch {
         reader: Box<dyn InputReader>,
         is_binary: bool,
         comp_hint: CompHint,
-    ) -> jbk::Result<jbk::ContentAddress> {
+    ) -> std::io::Result<jbk::ContentAddress> {
         if let Some(binary_content_pack) = &mut self.binary_content_pack {
             if is_binary {
                 return binary_content_pack.add_content(reader, comp_hint);
@@ -222,7 +222,7 @@ impl ZimEntry {
         entry: zim_rs::entry::Entry,
         dropper: &Dropper<Droppable>,
         adder: &mut ContentAdderSwitch,
-    ) -> jbk::Result<Self> {
+    ) -> Result<Self, waj::error::CreatorError> {
         let path = entry.get_path();
         let is_main = path.is_empty();
         let path = path.strip_prefix('/').unwrap_or(&path);
@@ -288,7 +288,7 @@ impl ZimEntry {
 }
 
 impl waj::create::EntryTrait for ZimEntry {
-    fn kind(&self) -> jbk::Result<Option<waj::create::EntryKind>> {
+    fn kind(&self) -> Result<Option<waj::create::EntryKind>, waj::error::CreatorError> {
         Ok(Some(match &self.data {
             ZimEntryKind::Redirect(target) => waj::create::EntryKind::Redirect(target.clone()),
             ZimEntryKind::Content(content_address, mime) => {
@@ -398,7 +398,7 @@ impl Converter {
         outfile: P,
         concat_mode: ConcatMode,
         split_binary: bool,
-    ) -> jbk::Result<Self> {
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let progress = Arc::new(ProgressBar::new(zim)?);
         let basic_creator = BasicCreator::new(
             &outfile,
@@ -441,12 +441,16 @@ impl Converter {
         })
     }
 
-    fn finalize(self, outfile: &Path) -> jbk::Result<()> {
+    fn finalize(self, outfile: &Path) -> Result<(), waj::error::CreatorError> {
         let (basic_creator, extra_content_creators) = self.content_adder_switch.into_inner();
-        basic_creator.finalize(outfile, self.entry_store_creator, extra_content_creators)
+        Ok(basic_creator.finalize(outfile, self.entry_store_creator, extra_content_creators)?)
     }
 
-    pub fn run(mut self, zim: Arc<Archive>, outfile: PathBuf) -> jbk::Result<()> {
+    pub fn run(
+        mut self,
+        zim: Arc<Archive>,
+        outfile: PathBuf,
+    ) -> Result<(), waj::error::CreatorError> {
         info!(
             "Converting zim file with {} entries",
             zim.get_all_entrycount()
@@ -469,7 +473,7 @@ impl Converter {
         self.finalize(&outfile)
     }
 
-    fn handle(&mut self, entry: zim_rs::entry::Entry) -> jbk::Result<()> {
+    fn handle(&mut self, entry: zim_rs::entry::Entry) -> Result<(), waj::error::CreatorError> {
         self.progress.entries.inc(1);
 
         let entry = ZimEntry::new(entry, &self.dropper, &mut self.content_adder_switch)?;
@@ -480,10 +484,10 @@ impl Converter {
     }
 }
 
-fn main() -> jbk::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Cli::parse();
 
     let zim = Arc::new(Archive::new(args.zim_file.to_str().unwrap()).unwrap());
     let converter = Converter::new(&zim, &args.outfile, ConcatMode::OneFile, args.split)?;
-    converter.run(zim, args.outfile)
+    Ok(converter.run(zim, args.outfile)?)
 }
